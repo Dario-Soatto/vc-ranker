@@ -74,6 +74,8 @@ const initialFunds = [
   { name: 'Pear VC', website: 'https://www.pear.vc', stage: 'early' },
   { name: 'Primary Venture Partners', website: 'https://www.primary.vc', stage: 'early' },
   { name: 'Obvious Ventures', website: 'https://obvious.com', stage: 'early' },
+  { name: 'Abstract Ventures', website: 'https://www.abstractvc.com/', stage: 'early' },
+  { name: 'Susa Ventures', website: 'https://www.susaventures.com/', stage: 'early' },
 ];
 
 export async function GET(request: Request) {
@@ -89,23 +91,43 @@ export async function GET(request: Request) {
       );
     }
 
-    // Delete all existing data and reset
+    // STEP 1: Save existing logo URLs
+    const existingLogos = await sql`
+      SELECT name, logo_url FROM funds WHERE logo_url IS NOT NULL
+    `;
+    
+    // Create a map of name -> logo_url
+    const logoMap = new Map(
+      existingLogos.rows.map(row => [row.name, row.logo_url])
+    );
+
+    console.log(`Preserving ${logoMap.size} existing logos`);
+
+    // STEP 2: Delete all existing data and reset
     await sql`DELETE FROM funds`;
     await sql`ALTER SEQUENCE funds_id_seq RESTART WITH 1`;
 
-    // Insert initial funds
+    // STEP 3: Insert funds with preserved logos
     for (const fund of initialFunds) {
+      const logoUrl = logoMap.get(fund.name) || null;
+      
       await sql`
-        INSERT INTO funds (name, website, stage, elo_score)
-        VALUES (${fund.name}, ${fund.website}, ${fund.stage}, 1000)
+        INSERT INTO funds (name, website, stage, logo_url, elo_score)
+        VALUES (${fund.name}, ${fund.website}, ${fund.stage}, ${logoUrl}, 1000)
       `;
+      
+      if (logoUrl) {
+        console.log(`✓ ${fund.name}: Restored logo`);
+      }
     }
 
     return NextResponse.json({ 
-      message: 'Database seeded successfully',
-      count: initialFunds.length 
+      message: 'Database seeded successfully with preserved logos',
+      count: initialFunds.length,
+      logosPreserved: logoMap.size
     }, { status: 200 });
   } catch (error) {
-    return NextResponse.json({ error }, { status: 500 });
+    console.error('Seeding error:', error);
+    return NextResponse.json({ error: 'Failed to seed database' }, { status: 500 });
   }
 }
