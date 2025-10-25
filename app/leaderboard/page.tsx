@@ -5,6 +5,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, Trophy, Medal, Award } from 'lucide-react';
 
+export const dynamic = 'force-dynamic';
+
 export default async function LeaderboardPage() {
   const { rows: funds } = await sql`
     SELECT * FROM funds
