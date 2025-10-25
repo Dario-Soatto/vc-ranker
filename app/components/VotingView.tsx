@@ -5,7 +5,7 @@ import { Fund } from '@/app/lib/types';
 import FundCard from './FundCard';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { Trophy, ArrowRight, Loader2 } from 'lucide-react';
+import { Trophy, ArrowRight, Loader2, SkipForward } from 'lucide-react';
 
 export default function VotingView() {
   const [funds, setFunds] = useState<Fund[]>([]);
@@ -18,6 +18,47 @@ export default function VotingView() {
   useEffect(() => {
     fetchFunds();
   }, []);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      // Don't handle keyboard shortcuts if we're voting or no pair is loaded
+      if (isVoting || !currentPair) return;
+
+      switch (e.key) {
+        case 'ArrowLeft':
+          // Vote for left card (only if not already voted)
+          if (!hasVoted) {
+            e.preventDefault();
+            handleVote(currentPair[0].id, currentPair[1].id);
+          }
+          break;
+        
+        case 'ArrowRight':
+          // Vote for right card (only if not already voted)
+          if (!hasVoted) {
+            e.preventDefault();
+            handleVote(currentPair[1].id, currentPair[0].id);
+          }
+          break;
+        
+        case ' ':
+        case 'Enter':
+        case 'Tab':
+          // Skip or Next
+          e.preventDefault();
+          handleNext();
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    
+    // Cleanup
+    return () => {
+      window.removeEventListener('keydown', handleKeyPress);
+    };
+  }, [isVoting, hasVoted, currentPair]); // Re-run when these change
 
   const fetchFunds = async () => {
     try {
@@ -56,19 +97,52 @@ export default function VotingView() {
   const handleVote = async (winnerId: number, loserId: number) => {
     setIsVoting(true);
     setSelectedWinnerId(winnerId);
-
+  
     try {
       const response = await fetch('/api/vote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ winnerId, loserId }),
       });
-
+  
       if (response.ok) {
-        const fundsResponse = await fetch('/api/funds');
-        const updatedFunds = await fundsResponse.json();
-        setFunds(updatedFunds);
-        updateCurrentPairScores(updatedFunds);
+        const data = await response.json();
+        
+        // Optimistically update just the two funds in our state
+        if (currentPair) {
+          const updatedPair: [Fund, Fund] = [
+            {
+              ...currentPair[0],
+              elo_score: currentPair[0].id === winnerId 
+                ? data.newRatings.winner 
+                : data.newRatings.loser,
+              match_count: currentPair[0].match_count + 1,
+            },
+            {
+              ...currentPair[1],
+              elo_score: currentPair[1].id === winnerId 
+                ? data.newRatings.winner 
+                : data.newRatings.loser,
+              match_count: currentPair[1].match_count + 1,
+            },
+          ];
+          
+          setCurrentPair(updatedPair);
+          
+          // Also update the funds array for when we get the next pair
+          setFunds(prevFunds => 
+            prevFunds.map(fund => {
+              if (fund.id === winnerId) {
+                return { ...fund, elo_score: data.newRatings.winner, match_count: fund.match_count + 1 };
+              }
+              if (fund.id === loserId) {
+                return { ...fund, elo_score: data.newRatings.loser, match_count: fund.match_count + 1 };
+              }
+              return fund;
+            })
+          );
+        }
+        
         setHasVoted(true);
       }
     } catch (error) {
@@ -114,6 +188,11 @@ export default function VotingView() {
               ? 'Rankings updated! Click Next for another matchup.' 
               : 'Which VC fund is better? Click to vote.'}
           </p>
+          
+          {/* Keyboard shortcut hints */}
+          <div className="text-sm text-slate-500">
+            Use ← → arrow keys to vote, Space/Enter to {hasVoted ? 'continue' : 'skip'}
+          </div>
           
           <Button asChild variant="outline" size="lg" className="gap-2">
             <Link href="/leaderboard">
@@ -163,22 +242,29 @@ export default function VotingView() {
           </div>
         </div>
 
-        {/* Status and Next Button */}
+        {/* Status and Skip/Next Button */}
         <div className="text-center mt-8">
-          {isVoting && (
+          {isVoting ? (
             <div className="flex items-center justify-center gap-2 text-slate-600">
               <Loader2 className="w-5 h-5 animate-spin" />
               <span>Updating rankings...</span>
             </div>
-          )}
-          
-          {hasVoted && !isVoting && (
+          ) : (
             <Button 
               onClick={handleNext}
               size="lg"
+              variant={hasVoted ? "default" : "outline"}
               className="gap-2"
             >
-              Next Matchup <ArrowRight className="w-4 h-4" />
+              {hasVoted ? (
+                <>
+                  Next Matchup <ArrowRight className="w-4 h-4" />
+                </>
+              ) : (
+                <>
+                  Skip <SkipForward className="w-4 h-4" />
+                </>
+              )}
             </Button>
           )}
         </div>
