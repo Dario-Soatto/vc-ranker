@@ -1,8 +1,19 @@
 import { sql } from '@vercel/postgres';
 import { NextResponse } from 'next/server';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    // Check secret from query parameter
+    const { searchParams } = new URL(request.url);
+    const secret = searchParams.get('secret');
+
+    if (secret !== process.env.ADMIN_SECRET) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Invalid or missing secret' },
+        { status: 401 }
+      );
+    }
+
     // Delete all existing data
     await sql`DELETE FROM funds`;
     
